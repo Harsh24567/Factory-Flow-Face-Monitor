@@ -1,5 +1,3 @@
-# utils/encode_known_faces.py
-
 import os
 import pickle
 import face_recognition

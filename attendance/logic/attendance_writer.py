@@ -1,5 +1,3 @@
-# attendance/logic/attendance_writer.py
-
 from database.models import SessionLocal, FaceAttendance
 import datetime
 import logging

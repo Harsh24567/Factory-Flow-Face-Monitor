@@ -1,5 +1,3 @@
-# recognition/encoders/face_encoder.py
-
 import face_recognition
 import logging
 

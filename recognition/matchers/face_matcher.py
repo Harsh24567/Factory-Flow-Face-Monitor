@@ -1,5 +1,3 @@
-# recognition/matchers/face_matcher.py
-
 import face_recognition
 import logging
 import numpy as np
