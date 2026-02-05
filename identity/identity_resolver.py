@@ -1,63 +1,51 @@
-import uuid
+import pickle
 import numpy as np
-import face_recognition
-
+import time
 
 class IdentityResolver:
-    def __init__(self, known_encodings, tolerance=0.5):
-        """
-        known_encodings:
-            dict[str, list[np.ndarray]]
-            {
-              "Harsh": [enc1, enc2, ...],
-              "Rahul": [...]
-            }
-        """
-        self.known_encodings = known_encodings
-        self.tolerance = tolerance
+    def __init__(self, db_path="data/embeddings.pkl", threshold=0.55):
+        with open(db_path, "rb") as f:
+            self.database = pickle.load(f)
+
+        self.threshold = threshold
 
         self.track_identities = {}
 
-    def resolve(self, track_id, face_image, timestamp):
-        """
-        face_image: RGB cropped face image (numpy array)
-        Returns: person_id (KNOWN_xxx or UNKNOWN_xxx)
-        """
+        self.identity_buffer = {}
 
-        if track_id in self.track_identities:
-            return self.track_identities[track_id]["person_id"]
+    def _cosine(self, a, b):
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-        encodings = face_recognition.face_encodings(face_image)
+    def _match_embedding(self, embedding):
+        best_match = "UNKNOWN"
+        best_score = self.threshold
 
-        if not encodings:
-            person_id = f"UNKNOWN_{uuid.uuid4().hex[:6]}"
-        else:
-            encoding = encodings[0]
-            person_id = self._match_known(encoding)
+        for person, embeds in self.database.items():
+            for e in embeds:
+                score = self._cosine(embedding, e)
+                if score > best_score:
+                    best_score = score
+                    best_match = person
 
-        self.track_identities[track_id] = {
-            "person_id": person_id,
-            "resolved_at": timestamp
-        }
+        return best_match
 
-        return person_id
+    def resolve(self, track_id, embedding):
+        name = self._match_embedding(embedding)
 
-    def _match_known(self, encoding):
-        """
-        Returns KNOWN_<name> or UNKNOWN_<id>
-        """
-        for name, known_list in self.known_encodings.items():
-            distances = face_recognition.face_distance(
-                known_list, encoding
-            )
-            if np.any(distances <= self.tolerance):
-                return f"KNOWN_{name}"
+        if track_id not in self.identity_buffer:
+            self.identity_buffer[track_id] = []
 
-        return f"UNKNOWN_{uuid.uuid4().hex[:6]}"
+        buf = self.identity_buffer[track_id]
+        buf.append(name)
+
+        if len(buf) > 5:
+            buf.pop(0)
+
+        final_name = max(set(buf), key=buf.count)
+
+        self.track_identities[track_id] = final_name
+        return final_name
 
     def remove_track(self, track_id):
-        """
-        Call when a track expires
-        """
-        if track_id in self.track_identities:
-            del self.track_identities[track_id]
+        self.track_identities.pop(track_id, None)
+        self.identity_buffer.pop(track_id, None)

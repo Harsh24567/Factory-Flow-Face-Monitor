@@ -1,64 +1,69 @@
 import time
+import numpy as np
+import uuid
 
-
-class PersonTracker:
-    """
-    Runtime state for a single tracked person.
-    This class does NOT decide IN/OUT.
-    It only records visibility timing.
-    """
-
-    def __init__(self, track_id, person_id, name):
-        """
-        track_id  : internal tracker ID (centroid / IoU / etc.)
-        person_id : known worker ID or UNKNOWN_xxx
-        name      : worker name or 'UNKNOWN'
-        """
-        self.track_id = track_id
+class TrackedPerson:
+    def __init__(self, person_id, embedding):
+        import numpy as np
         self.person_id = person_id
-        self.name = name
+        self.embedding = np.array(embedding)
 
         self.first_seen = time.time()
-        self.last_seen = self.first_seen
+        self.last_seen = time.time()
+        self.seen_duration = 0
 
-        self.visible_duration = 0.0  # seconds (accumulated)
-
-        # Attendance-related flags (controlled by StateManager)
         self.is_inside = False
         self.in_time = None
         self.out_time = None
 
-    def update_seen(self):
-        """
-        Call this once per frame when the person is detected.
-        """
+    def update(self, embedding):
+        import numpy as np
+        self.embedding = np.array(embedding) 
+        self.last_seen = time.time()
+        self.seen_duration = self.last_seen - self.first_seen
+
+
+    def update(self, embedding):
+        self.embedding = embedding
+        self.last_seen = time.time()
+        self.seen_duration = self.last_seen - self.first_seen
+
+
+class PersonTracker:
+    def __init__(self, match_threshold=0.6, disappear_time=60):
+        self.tracked_people = {}
+        self.match_threshold = match_threshold
+        self.disappear_time = disappear_time
+
+    def update(self, detections):
         now = time.time()
 
-        delta = now - self.last_seen
-        if delta > 0:
-            self.visible_duration += delta
+        for person_id, embedding in detections:
+            match_id = self._match_existing(embedding)
 
-        self.last_seen = now
+            if match_id:
+                self.tracked_people[match_id].update(embedding)
+            else:
+                if person_id == "UNKNOWN":
+                    person_id = f"UNKNOWN_{uuid.uuid4().hex[:6]}"
+                self.tracked_people[person_id] = TrackedPerson(person_id, embedding)
 
-    def reset_visibility_timer(self):
-        """
-        Optional utility:
-        Can be used if you want to reset visible duration
-        after IN event (not mandatory).
-        """
-        self.visible_duration = 0.0
+        self._cleanup(now)
+        return self.tracked_people
 
-    def get_absence_duration(self):
-        """
-        Returns how long the person has NOT been seen.
-        """
-        return time.time() - self.last_seen
+    def _match_existing(self, embedding):
+        import numpy as np
+        embedding = np.array(embedding)  # 🔥 FIX
 
-    def __repr__(self):
-        return (
-            f"PersonTracker("
-            f"id={self.person_id}, "
-            f"name={self.name}, "
-            f"is_inside={self.is_inside}, "
-            f"visible={self.visible_duration:.1f}s)"
-        )
+        for pid, person in self.tracked_people.items():
+            dist = np.linalg.norm(person.embedding - embedding)
+            if dist < self.match_threshold:
+                return pid
+        return None
+
+
+    def _cleanup(self, now):
+        remove = [pid for pid, p in self.tracked_people.items()
+                  if now - p.last_seen > self.disappear_time]
+        for pid in remove:
+            del self.tracked_people[pid]

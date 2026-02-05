@@ -1,92 +1,30 @@
-# from database.models import SessionLocal, FaceAttendance
-# import datetime
-# import logging
-
-# logger = logging.getLogger(__name__)
-
-# class AttendanceWriter:
-#     def __init__(self, dry_run=True):
-#         self.dry_run = dry_run
-
-#     def write(self, person_id, in_time, out_time, confidence=None):
-#         duration = (out_time - in_time).total_seconds()
-
-#         if self.dry_run:
-#             logger.info(
-#                 f"[DRY RUN] DB WRITE SKIPPED | {person_id} | "
-#                 f"Duration: {duration:.2f}s"
-#             )
-#             return
-
-#         db = SessionLocal()
-#         try:
-#             record = FaceAttendance(
-#                 person_id=person_id,
-#                 in_time=in_time,
-#                 out_time=out_time,
-#                 duration_seconds=duration,
-#                 confidence=confidence
-#             )
-#             db.add(record)
-#             db.commit()
-#             logger.info(f"[DB] Attendance saved for {person_id}")
-#         except Exception as e:
-#             db.rollback()
-#             logger.error(f"DB write failed: {e}")
-#         finally:
-#             db.close()
-
-# attendance/logic/attendance_writer.py
-
-from database.models import SessionLocal, FaceAttendance
-import logging
-
-logger = logging.getLogger(__name__)
-
+import sqlite3
+from datetime import datetime
+from config.attendance_config import DRY_RUN
 
 class AttendanceWriter:
-    """
-    Writes ONE attendance session per person (IN → OUT).
-    """
+    def __init__(self, db_path="database/face_attendance.db"):
+        self.db_path = db_path
 
-    def __init__(self, dry_run=True):
-        self.dry_run = dry_run
-
-    def write(self, person_id, in_time, out_time, confidence=None):
-        """
-        Persist a completed attendance session.
-        """
-
-        duration = (out_time - in_time).total_seconds()
-
-        if self.dry_run:
-            logger.info(
-                f"[DRY RUN] Attendance | {person_id} | "
-                f"{in_time} → {out_time} | "
-                f"Duration: {duration:.2f}s"
-            )
+    def _execute(self, query, params):
+        if DRY_RUN:
+            print("[DRY_RUN]", query, params)
             return
 
-        db = SessionLocal()
-        try:
-            record = FaceAttendance(
-                person_id=person_id,
-                in_time=in_time,
-                out_time=out_time,
-                duration_seconds=duration,
-                confidence=confidence
-            )
-            db.add(record)
-            db.commit()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
+        conn.close()
 
-            logger.info(
-                f"[DB] Attendance saved | {person_id} | "
-                f"Duration: {duration:.2f}s"
-            )
+    def mark_in(self, person):
+        self._execute(
+            "INSERT INTO attendance_events (person_id, event, timestamp) VALUES (?, ?, ?)",
+            (person.person_id, "IN", datetime.now().isoformat())
+        )
 
-        except Exception as e:
-            db.rollback()
-            logger.error(f"[DB ERROR] Attendance write failed: {e}")
-
-        finally:
-            db.close()
+    def mark_out(self, person):
+        self._execute(
+            "INSERT INTO attendance_events (person_id, event, timestamp) VALUES (?, ?, ?)",
+            (person.person_id, "OUT", datetime.now().isoformat())
+        )
