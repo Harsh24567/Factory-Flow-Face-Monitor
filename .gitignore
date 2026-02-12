@@ -44,12 +44,16 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Face recognition data
-data/encodings/*.pkl
-data/raw_faces/*
-!data/raw_faces/README.txt
-!data/known_faces/README.txt
-!data/encodings/README.txt
-
 # Models
-models/trained/*
+models/*
+
+# Cleaned up / Unused files
+NOT NEEDED/
+
+# Face Data
+data/known_faces/*
+data/raw_faces/*
+data/encodings/*
+!data/known_faces/README.md
+!data/raw_faces/README.md
+!data/encodings/README.md

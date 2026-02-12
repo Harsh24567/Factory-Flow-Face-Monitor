@@ -24,26 +24,29 @@ for person in os.listdir(DATASET_PATH):
             reps = DeepFace.represent(
                 img_path=img_path,
                 model_name="ArcFace",
-                detector_backend="retinaface",
-                enforce_detection=False
+                detector_backend="retinaface",   # IMPORTANT FIX
+                enforce_detection=False,
+                align=False
             )
 
             emb = reps[0]["embedding"]
             embeddings.append(emb)
 
-        except Exception as e:
-            print(f"Skipped {img_name} ({person})")
+            print(f"✔ Encoded {img_name}")
 
-    # Only keep people with enough samples
+        except Exception as e:
+            print(f"❌ Failed: {img_name} ({person})")
+            print("Error:", e)
+
     if len(embeddings) >= 3:
         database[person] = embeddings
-        print(f"✅ Encoded {person} ({len(embeddings)} images)")
+        print(f"Encoded {person} ({len(embeddings)} images)")
     else:
-        print(f"⚠ Skipped {person} (not enough usable images)")
+        print(f"Skipped {person} (not enough usable images)")
 
 print("\nSaving database...\n")
 
 with open(DB_PATH, "wb") as f:
     pickle.dump(database, f)
 
-print("🎉 Embedding database created at data/embeddings.pkl")
+print("Embedding database created at data/embeddings.pkl")

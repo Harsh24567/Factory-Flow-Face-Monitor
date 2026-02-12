@@ -13,7 +13,7 @@ class CameraManager:
 
     def start(self):
         logger.info("Starting camera...")
-        self.cap = cv2.VideoCapture(self.camera_index)
+        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
 
         if not self.cap.isOpened():
             raise RuntimeError("Camera could not be opened")

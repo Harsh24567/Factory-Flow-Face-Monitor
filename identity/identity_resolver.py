@@ -1,51 +1,92 @@
+# import pickle
+# import numpy as np
+
+
+# class IdentityResolver:
+#     def __init__(self, db_path="data/embeddings.pkl", threshold=0.55):
+#         with open(db_path, "rb") as f:
+#             raw_db = pickle.load(f)
+
+#         # Convert and normalize stored embeddings
+#         self.database = {}
+#         for person, embeds in raw_db.items():
+#             normalized_embeds = []
+#             for e in embeds:
+#                 e = np.array(e, dtype=np.float32)
+#                 e = e / np.linalg.norm(e)
+#                 normalized_embeds.append(e)
+#             self.database[person] = normalized_embeds
+
+#         self.threshold = threshold
+
+#         print("Loaded identities:", list(self.database.keys()))
+#         print("Matching threshold:", self.threshold)
+
+#     def resolve(self, embedding):
+#         embedding = np.array(embedding, dtype=np.float32)
+#         embedding = embedding / np.linalg.norm(embedding)
+
+#         best_match = "UNKNOWN"
+#         best_score = -1.0
+
+#         for person, embeds in self.database.items():
+#             for db_emb in embeds:
+#                 score = np.dot(embedding, db_emb)
+
+#                 if score > best_score:
+#                     best_score = score
+#                     best_match = person
+
+#         # 🔎 Debug similarity (temporary)
+#         print(f"Best similarity: {best_score:.3f} → {best_match}")
+
+#         if best_score >= self.threshold:
+#             return best_match
+#         else:
+#             return "UNKNOWN"
 import pickle
 import numpy as np
-import time
+
 
 class IdentityResolver:
-    def __init__(self, db_path="data/embeddings.pkl", threshold=0.55):
+    def __init__(self, db_path="data/embeddings.pkl", threshold=0.65):
         with open(db_path, "rb") as f:
-            self.database = pickle.load(f)
+            raw_db = pickle.load(f)
+
+        self.database = {}
+
+        # Normalize stored embeddings
+        for person, embeds in raw_db.items():
+            normalized = []
+            for e in embeds:
+                e = np.array(e, dtype=np.float32)
+                e = e / np.linalg.norm(e)
+                normalized.append(e)
+            self.database[person] = normalized
 
         self.threshold = threshold
 
-        self.track_identities = {}
+        print("Loaded identities:", list(self.database.keys()))
+        print("Matching threshold:", self.threshold)
 
-        self.identity_buffer = {}
+    def resolve(self, embedding):
+        embedding = np.array(embedding, dtype=np.float32)
+        embedding = embedding / np.linalg.norm(embedding)
 
-    def _cosine(self, a, b):
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-    def _match_embedding(self, embedding):
         best_match = "UNKNOWN"
-        best_score = self.threshold
+        best_score = -1.0
 
         for person, embeds in self.database.items():
-            for e in embeds:
-                score = self._cosine(embedding, e)
+            for db_emb in embeds:
+                score = np.dot(embedding, db_emb)
+
                 if score > best_score:
                     best_score = score
                     best_match = person
 
-        return best_match
+        print(f"Best similarity: {best_score:.3f} → {best_match}")
 
-    def resolve(self, track_id, embedding):
-        name = self._match_embedding(embedding)
-
-        if track_id not in self.identity_buffer:
-            self.identity_buffer[track_id] = []
-
-        buf = self.identity_buffer[track_id]
-        buf.append(name)
-
-        if len(buf) > 5:
-            buf.pop(0)
-
-        final_name = max(set(buf), key=buf.count)
-
-        self.track_identities[track_id] = final_name
-        return final_name
-
-    def remove_track(self, track_id):
-        self.track_identities.pop(track_id, None)
-        self.identity_buffer.pop(track_id, None)
+        if best_score >= self.threshold:
+            return best_match
+        else:
+            return "UNKNOWN"
