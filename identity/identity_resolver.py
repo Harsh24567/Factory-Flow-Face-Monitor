@@ -37,7 +37,7 @@
 #                     best_score = score
 #                     best_match = person
 
-#         # 🔎 Debug similarity (temporary)
+# 
 #         print(f"Best similarity: {best_score:.3f} → {best_match}")
 
 #         if best_score >= self.threshold:
@@ -49,13 +49,13 @@ import numpy as np
 
 
 class IdentityResolver:
-    def __init__(self, db_path="data/embeddings.pkl", threshold=0.65):
+    def __init__(self, db_path="data/embeddings.pkl", threshold=0.60):
         with open(db_path, "rb") as f:
             raw_db = pickle.load(f)
 
         self.database = {}
 
-        # Normalize stored embeddings
+
         for person, embeds in raw_db.items():
             normalized = []
             for e in embeds:
@@ -67,7 +67,7 @@ class IdentityResolver:
         self.threshold = threshold
 
         print("Loaded identities:", list(self.database.keys()))
-        print("Matching threshold:", self.threshold)
+        print(f"Matching threshold: {self.threshold} (Factory lighting optimized)")
 
     def resolve(self, embedding):
         embedding = np.array(embedding, dtype=np.float32)
@@ -84,9 +84,7 @@ class IdentityResolver:
                     best_score = score
                     best_match = person
 
-        print(f"Best similarity: {best_score:.3f} → {best_match}")
-
         if best_score >= self.threshold:
-            return best_match
+            return best_match, best_score
         else:
-            return "UNKNOWN"
+            return "UNKNOWN", best_score

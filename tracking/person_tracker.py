@@ -168,22 +168,30 @@ class PersonTracker:
                         best_track_id = track_id
 
             if best_iou > self.iou_threshold:
-                # UPGRADE LOGIC: If UNKNOWN -> KNOWN
-                if person_id != "UNKNOWN" and best_track_id.startswith("UNKNOWN"):
-                    # Swap ID
-                    print(f"*** UPGRADING ID: {best_track_id} -> {person_id} ***")
-                    person_obj = self.tracked_people.pop(best_track_id)
-                    person_obj.person_id = person_id
-                    person_obj.update(embedding, bbox)
-                    
-                    self.tracked_people[person_id] = person_obj
-                    used_track_ids.add(person_id)
-                else:
-                    # Normal Update
+                # Update the existing track (NO UPGRADE - respect face recognition result)
+                
+                # SECURITY CHECK: IOU Match Validation
+                # If we are matching an UNKNOWN detection to a KNOWN track,
+                # we MUST ensure they visually match significantly.
+                # Otherwise, it's just a stranger standing in the same spot.
+                security_check_passed = True
+                
+                if person_id == "UNKNOWN" and not best_track_id.startswith("UNKNOWN"):
+                     # Normalize incoming embedding for cosine similarity
+                     emb_array = np.array(embedding, dtype=np.float32)
+                     norm = np.linalg.norm(emb_array)
+                     norm_emb = emb_array / norm if norm > 1e-6 else emb_array
+                     
+                     sim = np.dot(self.tracked_people[best_track_id].embedding, norm_emb)
+                     
+                     if sim < self.similarity_threshold:
+                         # print(f"!!! SECURITY REJECT: IOU match {best_track_id} (sim {sim:.3f}) - Stranger detected !!!")
+                         security_check_passed = False
+                
+                if security_check_passed:
                     self.tracked_people[best_track_id].update(embedding, bbox)
                     used_track_ids.add(best_track_id)
-                
-                detections[i] = (None, None, None) # Mark handled
+                    detections[i] = (None, None, None) # Mark handled
 
         # ---------------- 2. Match by Embedding (Visual) ----------------
         for i, (person_id, embedding, bbox) in enumerate(detections):
@@ -197,6 +205,13 @@ class PersonTracker:
             
             # Match Existing Unknown via Embedding
             match_id = self._match_existing_embedding(embedding)
+            
+            # STRICT SECURITY CHECK:
+            # If face recognition says UNKNOWN, do NOT allow tracker to merge it into a KNOWN ID.
+            # This prevents strangers from "hijacking" a worker's track.
+            if person_id == "UNKNOWN" and match_id and not match_id.startswith("UNKNOWN"):
+                 match_id = None 
+
             if match_id:
                 self.tracked_people[match_id].update(embedding, bbox)
             else:

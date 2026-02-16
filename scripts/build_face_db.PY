@@ -23,8 +23,8 @@ for person in os.listdir(DATASET_PATH):
         try:
             reps = DeepFace.represent(
                 img_path=img_path,
-                model_name="ArcFace",
-                detector_backend="retinaface",   # IMPORTANT FIX
+                model_name="Facenet512",
+                detector_backend="retinaface",
                 enforce_detection=False,
                 align=False
             )
