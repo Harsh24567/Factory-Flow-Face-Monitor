@@ -32,6 +32,8 @@ app.add_middleware(
         "http://localhost:5173",  # Vite dev server
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -64,19 +66,46 @@ def get_metrics():
         # Count present workers today
         present_workers = set()
         for record in today_records:
-            if record['duration_sec'] > 0:
+            # Count if duration > 0 (completed) OR if currently active (ongoing)
+            if (record.get('duration_sec', 0) > 0 or record.get('is_active')) and record['person_id'] in workers:
                 present_workers.add(record['person_id'])
         
-        # Calculate real-time count (workers currently being tracked)
-        # For now, use present count as approximation
-        realtime_count = len(present_workers)
+        # Calculate On-Time Percentage
+        on_time_count = 0
+        total_present_count = len(present_workers)
         
+        # Get settings for start time
+        settings = data_reader.get_system_settings()
+        start_time_limit = datetime.strptime(f"{datetime.now().strftime('%Y-%m-%d')} {settings['work_start_time']}", "%Y-%m-%d %H:%M")
+
+        # Calculate Avg Confidence and On-Time Count
+        total_confidence = 0
+        confidence_count = 0
+
+        for record in today_records:
+            if record['person_id'] in present_workers:
+                # On Time Check
+                if record['in_time']:
+                    in_dt = datetime.strptime(f"{datetime.now().strftime('%Y-%m-%d')} {record['in_time']}", "%Y-%m-%d %H:%M:%S")
+                    if in_dt <= start_time_limit:
+                        on_time_count += 1
+                
+                # Confidence Check
+                if record.get('confidence', 0) > 0:
+                    total_confidence += record['confidence']
+                    confidence_count += 1
+        
+        on_time_percent = int((on_time_count / total_present_count * 100)) if total_present_count > 0 else 0
+        avg_conf = int(total_confidence / confidence_count) if confidence_count > 0 else 0
+
         return {
-            "realtimeCount": realtime_count,
+            "realtimeCount": len(present_workers),
             "totalRegistered": len(workers),
             "activePresent": len(present_workers),
             "unknownDetections": len(unknown_tracker.get_all()),
-            "trend": f"+{realtime_count}" if realtime_count > 0 else "0"
+            "trend": "0",
+            "onTimePercentage": on_time_percent,
+            "avgConfidence": avg_conf
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -142,6 +171,15 @@ def get_hourly_report(date: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/reports/daily")
+def get_daily_occupancy(days: int = 30):
+    """Get daily occupancy report for the last N days"""
+    try:
+        return data_reader.get_daily_occupancy(days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/workers/{worker_id}")
 def get_worker_detail(worker_id: str, date: Optional[str] = None):
     """Get detailed stats for a specific worker"""
@@ -163,10 +201,11 @@ def get_worker_detail(worker_id: str, date: Optional[str] = None):
 
 @app.get("/api/attendance/raw")
 def get_raw_attendance(date: Optional[str] = None):
-    """Get raw attendance records"""
+    """Get raw attendance records (all history if date is None)"""
     try:
         if date is None:
-            records = data_reader.get_today_records()
+            # Return full history
+            records = data_reader.read_attendance_log()
         else:
             all_records = data_reader.read_attendance_log()
             records = [r for r in all_records if r['date'] == date]
@@ -201,6 +240,66 @@ def dismiss_unknown(detection_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi.responses import FileResponse
+
+@app.get("/api/workers/{worker_id}/image")
+def get_worker_image(worker_id: str):
+    """Get the registered profile picture for a worker"""
+    try:
+        worker_dir = BASE_DIR / "data" / "known_faces" / worker_id
+        if not worker_dir.exists():
+            raise HTTPException(status_code=404, detail="Worker not found")
+        
+        # Find first image file
+        for file in worker_dir.iterdir():
+            if file.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                return FileResponse(str(file))
+        
+        raise HTTPException(status_code=404, detail="Image not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------- SETTINGS ENDPOINTS ----------------
+from pydantic import BaseModel
+
+class SettingsUpdate(BaseModel):
+    key: str
+    value: str
+
+@app.get("/api/settings")
+def get_settings():
+    """Get all system settings"""
+    try:
+        return data_reader.get_system_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings")
+def update_settings(setting: SettingsUpdate):
+    """Update a system setting"""
+    from database.models import SessionLocal, SystemSettings
+    db = SessionLocal()
+    try:
+        # Check if exists
+        existing = db.query(SystemSettings).filter(SystemSettings.key == setting.key).first()
+        if existing:
+            existing.value = setting.value
+        else:
+            new_setting = SystemSettings(key=setting.key, value=setting.value)
+            db.add(new_setting)
+        
+        db.commit()
+        return {"status": "success", "key": setting.key, "value": setting.value}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     print("Starting Factory Flow Monitor API Server...")
     print("Dashboard API: http://localhost:8000")
@@ -209,7 +308,7 @@ if __name__ == "__main__":
     print("-" * 60)
     
     uvicorn.run(
-        app,
+        "api.main:app",
         host="0.0.0.0",
         port=8000,
         log_level="info",

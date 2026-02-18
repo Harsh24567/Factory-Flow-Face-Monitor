@@ -1,72 +1,3 @@
-# import time
-# import numpy as np
-# import uuid
-
-# class TrackedPerson:
-#     def __init__(self, person_id, embedding):
-#         import numpy as np
-#         self.person_id = person_id
-#         self.embedding = np.array(embedding)
-
-#         self.first_seen = time.time()
-#         self.last_seen = time.time()
-#         self.seen_duration = 0
-
-#         self.is_inside = False
-#         self.in_time = None
-#         self.out_time = None
-
-#     def update(self, embedding):
-#         import numpy as np
-#         self.embedding = np.array(embedding) 
-#         self.last_seen = time.time()
-#         self.seen_duration = self.last_seen - self.first_seen
-
-
-#     def update(self, embedding):
-#         self.embedding = embedding
-#         self.last_seen = time.time()
-#         self.seen_duration = self.last_seen - self.first_seen
-
-
-# class PersonTracker:
-#     def __init__(self, match_threshold=0.6, disappear_time=60):
-#         self.tracked_people = {}
-#         self.match_threshold = match_threshold
-#         self.disappear_time = disappear_time
-
-#     def update(self, detections):
-#         now = time.time()
-
-#         for person_id, embedding in detections:
-#             match_id = self._match_existing(embedding)
-
-#             if match_id:
-#                 self.tracked_people[match_id].update(embedding)
-#             else:
-#                 if person_id == "UNKNOWN":
-#                     person_id = f"UNKNOWN_{uuid.uuid4().hex[:6]}"
-#                 self.tracked_people[person_id] = TrackedPerson(person_id, embedding)
-
-#         self._cleanup(now)
-#         return self.tracked_people
-
-#     def _match_existing(self, embedding):
-#         import numpy as np
-#         embedding = np.array(embedding)
-
-#         for pid, person in self.tracked_people.items():
-#             dist = np.linalg.norm(person.embedding - embedding)
-#             if dist < self.match_threshold:
-#                 return pid
-#         return None
-
-
-#     def _cleanup(self, now):
-#         remove = [pid for pid, p in self.tracked_people.items()
-#                   if now - p.last_seen > self.disappear_time]
-#         for pid in remove:
-#             del self.tracked_people[pid]
 import time
 import numpy as np
 import uuid
@@ -167,28 +98,52 @@ class PersonTracker:
                         best_iou = iou
                         best_track_id = track_id
 
+            # STRICTER IOU MATCHING LOGIC
             if best_iou > self.iou_threshold:
-                # Update the existing track (NO UPGRADE - respect face recognition result)
+                track = self.tracked_people[best_track_id]
+                existing_id = track.person_id
                 
-                # SECURITY CHECK: IOU Match Validation
-                # If we are matching an UNKNOWN detection to a KNOWN track,
-                # we MUST ensure they visually match significantly.
-                # Otherwise, it's just a stranger standing in the same spot.
-                security_check_passed = True
+                match_valid = False
                 
-                if person_id == "UNKNOWN" and not best_track_id.startswith("UNKNOWN"):
-                     # Normalize incoming embedding for cosine similarity
-                     emb_array = np.array(embedding, dtype=np.float32)
-                     norm = np.linalg.norm(emb_array)
-                     norm_emb = emb_array / norm if norm > 1e-6 else emb_array
-                     
-                     sim = np.dot(self.tracked_people[best_track_id].embedding, norm_emb)
-                     
-                     if sim < self.similarity_threshold:
-                         # print(f"!!! SECURITY REJECT: IOU match {best_track_id} (sim {sim:.3f}) - Stranger detected !!!")
-                         security_check_passed = False
+                # CASE A: Same Identity (or both UNKNOWN) -> MATCH
+                if person_id == existing_id:
+                    match_valid = True
+                    
+                # CASE B: Detection is UNKNOWN, Track is KNOWN -> MATCH (assume missed recognition)
+                elif person_id == "UNKNOWN" and not existing_id.startswith("UNKNOWN"):
+                     # OPTIONAL: Verify embedding similarity to be sure it's not a stranger
+                     match_valid = True 
+
+                # CASE C: Detection is KNOWN, Track is UNKNOWN -> UPGRADE (Found identity!)
+                elif person_id != "UNKNOWN" and existing_id.startswith("UNKNOWN"):
+                    # We found who this "UNKNOWN" person is.
+                    # SWAP the track ID to the real name.
+                    print(f"!!! UPGRADING TRACK: {existing_id} -> {person_id} !!!")
+                    
+                    # Create new track with old history
+                    new_track = TrackedPerson(person_id, embedding, bbox)
+                    new_track.first_seen = track.first_seen
+                    new_track.active_duration = track.active_duration
+                    new_track.last_seen = now
+                    new_track.is_visible = True
+                    
+                    # Replace in dictionary (removing old, adding new)
+                    del self.tracked_people[best_track_id]
+                    self.tracked_people[person_id] = new_track
+                    
+                    used_track_ids.add(person_id)
+                    detections[i] = (None, None, None) # Mark handled
+                    continue # Skip normal update, we just replaced it
+
+                # CASE D: Detection is KNOWN X, Track is KNOWN Y -> CONFLICT
+                elif person_id != "UNKNOWN" and existing_id != "UNKNOWN" and person_id != existing_id:
+                    # CRITICAL FIX: explicit identity mismatch.
+                    # This means Worker_A is at the spot where Worker_B was.
+                    # DO NOT MATCH. Let it create a new track for Worker_A.
+                    print(f"!!! CONFLICT DETECTED: Track {existing_id} vs Detection {person_id} (IOU: {best_iou:.2f}) - REJECTING MATCH !!!")
+                    match_valid = False
                 
-                if security_check_passed:
+                if match_valid:
                     self.tracked_people[best_track_id].update(embedding, bbox)
                     used_track_ids.add(best_track_id)
                     detections[i] = (None, None, None) # Mark handled
@@ -197,29 +152,51 @@ class PersonTracker:
         for i, (person_id, embedding, bbox) in enumerate(detections):
             if person_id is None: continue 
 
-            # Match Existing Known
+            # A. HANDLE KNOWN IDENTITIES
             if person_id != "UNKNOWN":
+                # 1. Update existing self
                 if person_id in self.tracked_people:
                     self.tracked_people[person_id].update(embedding, bbox)
                     continue
-            
+                
+                # 2. Try to find a LOST UNKNOWN track to upgrade
+                match_id = self._match_existing_embedding(embedding)
+                
+                if match_id and match_id.startswith("UNKNOWN"):
+                    # UPGRADE (Non-spatial, visual re-id)
+                    print(f"!!! UPGRADING LOST TRACK: {match_id} -> {person_id} !!!")
+                    track = self.tracked_people[match_id]
+                    
+                    # Create new track with old history
+                    new_track = TrackedPerson(person_id, embedding, bbox)
+                    new_track.first_seen = track.first_seen
+                    new_track.active_duration = track.active_duration
+                    new_track.last_seen = now
+                    new_track.is_visible = True
+                    
+                    del self.tracked_people[match_id]
+                    self.tracked_people[person_id] = new_track
+                    continue
+                
+                # 3. New Track (Do NOT merge into other Known tracks)
+                self.tracked_people[person_id] = TrackedPerson(person_id, embedding, bbox)
+                continue
+
+            # B. HANDLE UNKNOWN IDENTITIES
             # Match Existing Unknown via Embedding
             match_id = self._match_existing_embedding(embedding)
             
             # STRICT SECURITY CHECK:
             # If face recognition says UNKNOWN, do NOT allow tracker to merge it into a KNOWN ID.
-            # This prevents strangers from "hijacking" a worker's track.
-            if person_id == "UNKNOWN" and match_id and not match_id.startswith("UNKNOWN"):
+            if match_id and not match_id.startswith("UNKNOWN"):
                  match_id = None 
 
             if match_id:
                 self.tracked_people[match_id].update(embedding, bbox)
             else:
                 # NEW TRACK
-                if person_id == "UNKNOWN":
-                    person_id = f"UNKNOWN_{uuid.uuid4().hex[:6]}"
-                
-                self.tracked_people[person_id] = TrackedPerson(person_id, embedding, bbox)
+                temp_id = f"UNKNOWN_{uuid.uuid4().hex[:6]}"
+                self.tracked_people[temp_id] = TrackedPerson(temp_id, embedding, bbox)
 
         self._cleanup(now)
         return self.tracked_people

@@ -2,6 +2,22 @@
 venv/
 env/
 .env
+.env.local
+.env.production
+.env.development
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+frontend/build/
+frontend/.vercel/
+frontend/.turbo/
+node_modules/
+.next/
+out/
+build/
+
 
 # Python
 __pycache__/

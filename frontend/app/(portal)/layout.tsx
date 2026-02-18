@@ -14,7 +14,11 @@ export default function PortalLayout({
       <AppSidebar />
       <SidebarInset>
         <TopHeader />
-        <div className="flex-1 overflow-auto p-4 md:p-6">{children}</div>
+        <main className="relative flex-1 overflow-auto p-4 md:p-6">
+          {/* Subtle background texture */}
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(var(--primary)/0.03)_0%,transparent_50%)]" />
+          <div className="relative">{children}</div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   )

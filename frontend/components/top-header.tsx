@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
-import { Moon, Sun, ChevronRight, User, LogOut } from "lucide-react"
+import { Moon, Sun, ChevronRight, User, LogOut, Bell, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import Link from "next/link"
 
@@ -36,52 +35,74 @@ export function TopHeader() {
   })
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4">
-      <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-      <Separator orientation="vertical" className="h-5" />
-      <nav className="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
-        <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/60 px-4 backdrop-blur-xl">
+      <SidebarTrigger className="text-muted-foreground hover:text-foreground transition-colors" />
+      <div className="h-4 w-px bg-border/60" />
+      <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
+        <Link href="/dashboard" className="text-muted-foreground/70 hover:text-foreground transition-colors text-xs">
           Home
         </Link>
         {breadcrumbs.map((crumb) => (
-          <span key={crumb.href} className="flex items-center gap-1.5">
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
-            <Link
-              href={crumb.href}
-              className="text-foreground font-medium"
-            >
+          <span key={crumb.href} className="flex items-center gap-1">
+            <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
+            <Link href={crumb.href} className="text-xs font-medium text-foreground">
               {crumb.label}
             </Link>
           </span>
         ))}
       </nav>
-      <div className="ml-auto flex items-center gap-2">
+
+      <div className="ml-auto flex items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50"
+          aria-label="Search"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50"
+          aria-label="Notifications"
+        >
+          <Bell className="h-4 w-4" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           aria-label="Toggle theme"
         >
           <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
         </Button>
+
+        <div className="ml-1 h-4 w-px bg-border/60" />
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2 px-2">
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">AD</AvatarFallback>
+            <Button variant="ghost" className="flex items-center gap-2 rounded-lg px-2 hover:bg-accent/50">
+              <Avatar className="h-7 w-7 rounded-lg">
+                <AvatarFallback className="rounded-lg bg-primary/15 text-xs font-semibold text-primary">
+                  AD
+                </AvatarFallback>
               </Avatar>
-              <span className="hidden text-sm font-medium md:inline-block">Admin</span>
+              <span className="hidden text-xs font-medium text-foreground md:inline-block">Admin</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-card/95 backdrop-blur-xl">
+            <DropdownMenuItem className="rounded-lg">
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
+            <DropdownMenuSeparator className="bg-border/50" />
+            <DropdownMenuItem asChild className="rounded-lg">
               <Link href="/login" className="flex items-center text-destructive">
                 <LogOut className="mr-2 h-4 w-4" />
                 Log Out

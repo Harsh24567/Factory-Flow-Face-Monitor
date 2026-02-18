@@ -45,9 +45,10 @@ class StateManager:
                     "in_time": in_dt
                 }
                 print(f"✅ [IN] {person_id} detected! (Present for {active_time:.1f}s)")
-                # Ideally we want to log 'IN' to database here if needed, 
-                # but user asked for "duration" which is usually end-of-shift.
-                # If we assume 'daily log', we just keep state.
+                
+                # Check-In Immediately
+                if hasattr(writer, 'log_entry'):
+                    writer.log_entry(person_id, in_dt)
 
         # 2. EXIT LOGIC
         elif state == "IN":
@@ -61,10 +62,10 @@ class StateManager:
                 # Calculate total session duration
                 session_duration = (out_dt - in_dt).total_seconds()
                 
-                print(f"❌ [OUT] {person_id} (Gone for {time_gone:.1f}s) | Duration: {session_duration:.1f}s")
-                
-                # Log to CSV
-                if hasattr(writer, 'log_record'):
+                # Update existing record with Check-Out time
+                if hasattr(writer, 'update_exit'):
+                    writer.update_exit(person_id, out_dt)
+                elif hasattr(writer, 'log_record'):
                     writer.log_record(person_id, in_dt, out_dt, session_duration)
                 
                 # Reset state

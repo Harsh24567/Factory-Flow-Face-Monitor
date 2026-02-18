@@ -23,10 +23,18 @@ class FaceAttendance(Base):
     id = Column(Integer, primary_key=True, index=True)
     person_id = Column(String, index=True)
     in_time = Column(DateTime)
-    out_time = Column(DateTime)
-    duration_seconds = Column(Float)
+    out_time = Column(DateTime, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
     date = Column(DateTime, default=datetime.date.today)
     confidence = Column(Float, nullable=True)
+
+
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True)
+    value = Column(String)
 
 
 def init_db():

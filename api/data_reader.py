@@ -36,25 +36,26 @@ class AttendanceDataReader:
         return sorted(workers)
     
     def read_attendance_log(self) -> List[Dict]:
-        """Read all attendance records from CSV"""
+        """Read all attendance records from Database"""
+        from database.models import SessionLocal, FaceAttendance
+        db = SessionLocal()
         records = []
-        if not self.csv_path.exists():
-            return records
-            
         try:
-            with open(self.csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if row.get('Person ID'):  # Skip empty rows
-                        records.append({
-                            'person_id': row['Person ID'],
-                            'date': row['Date'],
-                            'in_time': row['In Time'],
-                            'out_time': row['Out Time'],
-                            'duration_sec': float(row['Duration (sec)']) if row['Duration (sec)'] else 0
-                        })
+            db_records = db.query(FaceAttendance).all()
+            for row in db_records:
+                records.append({
+                    'person_id': row.person_id,
+                    'date': row.date.strftime("%Y-%m-%d") if row.date else "",
+                    'in_time': row.in_time.strftime("%H:%M:%S") if row.in_time else "",
+                    'out_time': row.out_time.strftime("%H:%M:%S") if row.out_time else None,
+                    'duration_sec': row.duration_seconds if row.duration_seconds is not None else 0,
+                    'confidence': row.confidence if row.confidence else 0.0,
+                    'is_active': row.out_time is None # Flag to identify active sessions
+                })
         except Exception as e:
-            print(f"Error reading CSV: {e}")
+            print(f"Error reading DB: {e}")
+        finally:
+            db.close()
             
         return records
     
@@ -64,6 +65,25 @@ class AttendanceDataReader:
         all_records = self.read_attendance_log()
         return [r for r in all_records if r['date'] == today]
     
+    def get_system_settings(self) -> Dict[str, str]:
+        """Fetch system settings from database"""
+        from database.models import SessionLocal, SystemSettings
+        db = SessionLocal()
+        settings = {}
+        try:
+            results = db.query(SystemSettings).all()
+            for row in results:
+                settings[row.key] = row.value
+        except Exception as e:
+            print(f"Error fetching settings: {e}")
+        finally:
+            db.close()
+        
+        # Defaults
+        if "work_start_time" not in settings: settings["work_start_time"] = "09:00"
+        if "work_end_time" not in settings: settings["work_end_time"] = "17:00"
+        return settings
+
     def get_worker_stats(self, worker_id: str, date: str = None) -> Dict:
         """Get statistics for a specific worker"""
         if date is None:
@@ -71,6 +91,14 @@ class AttendanceDataReader:
             
         all_records = self.read_attendance_log()
         worker_records = [r for r in all_records if r['person_id'] == worker_id and r['date'] == date]
+        
+        settings = self.get_system_settings()
+        start_time_limit = datetime.strptime(f"{date} {settings['work_start_time']}", "%Y-%m-%d %H:%M")
+        end_time_limit = datetime.strptime(f"{date} {settings['work_end_time']}", "%Y-%m-%d %H:%M")
+
+        status = 'absent'
+        is_late = False
+        left_early = False
         
         if not worker_records:
             return {
@@ -82,12 +110,49 @@ class AttendanceDataReader:
                 'first_seen': None,
                 'last_seen': None,
                 'num_sessions': 0,
-                'status': 'absent'
+                'status': 'absent',
+                'is_late': False,
+                'left_early': False
             }
         
         total_duration = sum(r['duration_sec'] for r in worker_records)
-        first_seen = min(worker_records, key=lambda x: x['in_time'])['in_time']
-        last_seen = max(worker_records, key=lambda x: x['out_time'])['out_time']
+        first_seen_str = min(worker_records, key=lambda x: x['in_time'])['in_time']
+        
+        # Handle out_time safely (active sessions have None)
+        completed_sessions = [r for r in worker_records if r['out_time']]
+        active_sessions = [r for r in worker_records if r['out_time'] is None]
+        
+        if completed_sessions:
+            last_seen_str = max(completed_sessions, key=lambda x: x['out_time'])['out_time']
+        elif active_sessions:
+            last_seen_str = active_sessions[0]['in_time'] # Use in_time if currently active
+        else:
+            last_seen_str = first_seen_str # Fallback
+
+        first_seen_dt = datetime.strptime(f"{date} {first_seen_str}", "%Y-%m-%d %H:%M:%S")
+        
+        # LOGIC: LATE
+        if first_seen_dt > start_time_limit:
+            is_late = True
+            
+        # LOGIC: LEFT EARLY
+        # If currently active, they haven't left.
+        if active_sessions:
+            left_early = False
+        else:
+            try:
+                last_seen_dt = datetime.strptime(f"{date} {last_seen_str}", "%Y-%m-%d %H:%M:%S")
+                if last_seen_dt < end_time_limit:
+                    left_early = True
+            except:
+                left_early = False
+            
+        # Refine Status
+        if total_duration > 0 or active_sessions:
+            status = 'present'
+            if is_late: status += ' (Late)'
+            if left_early: status += ' (Early Leave)'
+            if active_sessions: status += ' (Active)'
         
         hours = int(total_duration // 3600)
         minutes = int((total_duration % 3600) // 60)
@@ -98,10 +163,12 @@ class AttendanceDataReader:
             'total_duration_sec': total_duration,
             'total_duration_formatted': f'{hours}h {minutes}m',
             'total_minutes': int(total_duration / 60),
-            'first_seen': first_seen,
-            'last_seen': last_seen,
+            'first_seen': first_seen_str,
+            'last_seen': last_seen_str,
             'num_sessions': len(worker_records),
-            'status': 'present' if total_duration > 0 else 'absent'
+            'status': status,
+            'is_late': is_late,
+            'left_early': left_early
         }
     
     def get_hourly_report(self, date: str = None) -> List[Dict]:
@@ -183,15 +250,39 @@ class AttendanceDataReader:
         except:
             return None
     
-    def _calculate_overlap(self, in_time: float, out_time: float, 
-                          slot_start: float, slot_end: float) -> int:
-        """Calculate overlap in minutes between presence and time slot"""
-        overlap_start = max(in_time, slot_start)
-        overlap_end = min(out_time, slot_end)
+    def get_daily_occupancy(self, days: int = 30) -> List[Dict]:
+        """Get daily unique worker counts for the last N days"""
+        all_records = self.read_attendance_log()
+        registered_workers = set(self.get_registered_workers())
         
-        if overlap_start < overlap_end:
-            return int((overlap_end - overlap_start) * 60)
-        return 0
+        # Group by date
+        daily_counts = {}
+        today = datetime.now().date()
+        start_date = today - timedelta(days=days)
+        
+        # Initialize all dates in range with 0
+        current = start_date
+        while current <= today:
+            d_str = current.strftime("%Y-%m-%d")
+            daily_counts[d_str] = set()
+            current += timedelta(days=1)
+            
+        for r in all_records:
+            date_str = r['date']
+            person_id = r['person_id']
+            # Only count if within range AND is a registered worker (exclude test data/unknowns)
+            if date_str in daily_counts and person_id and person_id in registered_workers:
+                daily_counts[date_str].add(person_id)
+                
+        # Format for frontend
+        result = []
+        for date_str, workers in daily_counts.items():
+            result.append({
+                "date": date_str,
+                "count": len(workers)
+            })
+            
+        return sorted(result, key=lambda x: x['date'])
 
 
 class UnknownPersonTracker:
