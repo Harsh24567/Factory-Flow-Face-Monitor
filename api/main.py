@@ -78,6 +78,30 @@ def get_metrics():
         settings = data_reader.get_system_settings()
         start_time_limit = datetime.strptime(f"{datetime.now().strftime('%Y-%m-%d')} {settings['work_start_time']}", "%Y-%m-%d %H:%M")
 
+        # CHECK HEARTBEAT
+        import json
+        import time
+        heartbeat_file = BASE_DIR / "data" / "system_heartbeat.json"
+        is_system_active = False
+        if heartbeat_file.exists():
+            try:
+                with open(heartbeat_file, "r") as f:
+                    hb_data = json.load(f)
+                    if time.time() - hb_data.get("timestamp", 0) < 30:
+                        is_system_active = True
+            except:
+                pass
+
+        if not is_system_active:
+             # System is offline, so no one is "Live"
+             present_workers = set() 
+             # We still want to count people who have COMPLETED sessions today as "present" in the total, 
+             # but "activePresent" usually implies "currently here". 
+             # However, the user said "LIVE PRESENT NOW DATA... STUCK AT 1".
+             # If I clear present_workers, it clears "realtimeCount" AND "activePresent" in the return.
+             pass
+
+
         # Calculate Avg Confidence and On-Time Count
         total_confidence = 0
         confidence_count = 0
@@ -99,9 +123,9 @@ def get_metrics():
         avg_conf = int(total_confidence / confidence_count) if confidence_count > 0 else 0
 
         return {
-            "realtimeCount": len(present_workers),
+            "realtimeCount": len(present_workers) if is_system_active else 0, # Only show live count if system is running
             "totalRegistered": len(workers),
-            "activePresent": len(present_workers),
+            "activePresent": len(present_workers) if is_system_active else 0,
             "unknownDetections": len(unknown_tracker.get_all()),
             "trend": "0",
             "onTimePercentage": on_time_percent,

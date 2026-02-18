@@ -43,7 +43,7 @@ export default function DashboardPage() {
             name: w.name,
             department: w.department,
             avatar: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(w.name)}&backgroundColor=1a1a2e&textColor=4ade80`,
-            status: w.status.includes('present') ? 'in' : 'out',
+            status: w.status.includes('Active') ? 'in' : 'out',
             lastSeen: w.lastSeen,
             punctualityScore: 95
           })))

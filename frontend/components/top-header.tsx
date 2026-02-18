@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
 import { Moon, Sun, ChevronRight, User, LogOut, Bell, Search } from "lucide-react"
@@ -26,6 +27,13 @@ const breadcrumbMap: Record<string, string> = {
 export function TopHeader() {
   const { theme, setTheme } = useTheme()
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null
 
   const segments = pathname.split("/").filter(Boolean)
   const breadcrumbs = segments.map((_, i) => {

@@ -47,8 +47,22 @@ if not cap.isOpened():
 
 print("Attendance system running... Press Q to quit")
 
+import json
+import time
+
+HEARTBEAT_FILE = BASE_DIR / "data" / "system_heartbeat.json"
+
+def update_heartbeat():
+    try:
+        data = {"timestamp": time.time(), "status": "running"}
+        with open(HEARTBEAT_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Heartbeat error: {e}")
+
 # ---------------- MAIN LOOP ----------------
 while True:
+    update_heartbeat() # Update heartbeat every frame
     for _ in range(5):
         cap.grab()
         

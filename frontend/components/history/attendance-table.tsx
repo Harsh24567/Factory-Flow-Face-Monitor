@@ -177,7 +177,7 @@ export function AttendanceTable({ events }: AttendanceTableProps) {
                 pageData.map((event) => {
                   const inDt = formatDateTime(event.inTime)
                   const outDt = event.outTime ? formatDateTime(event.outTime) : null
-                  const isActive = !event.outTime
+                  const isActive = event.status === "Active"
                   const profileUrl = event.profileUrl || event.snapshotUrl
 
                   return (
@@ -231,7 +231,7 @@ export function AttendanceTable({ events }: AttendanceTableProps) {
                             event.status === "Incomplete" ? "bg-destructive" :
                               "bg-muted-foreground"
                             }`} />
-                          {isActive ? "Active" : event.status === "Incomplete" ? "Timeout" : "Away"}
+                          {isActive ? "Active" : event.status === "Incomplete" ? "Away" : "Away"}
                         </span>
                       </TableCell>
 

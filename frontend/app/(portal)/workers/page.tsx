@@ -24,7 +24,7 @@ export default function WorkersPage() {
             name: w.name,
             department: w.department,
             avatar: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(w.name)}&backgroundColor=1a1a2e&textColor=4ade80`, // Generate avatar if missing
-            status: w.status.includes('present') ? 'in' : 'out', // Simple mapping for visual dot
+            status: w.status.includes('Active') ? 'in' : 'out', // Only show green dot if currently Active
             lastSeen: w.lastSeen,
             punctualityScore: 95, // API doesn't have this yet, default to high
             is_late: w.is_late,
